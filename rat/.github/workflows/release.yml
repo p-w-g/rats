@@ -1,0 +1,158 @@
+# Release asset naming contract
+# -------------------------------
+# This workflow is a public contract with the `rat-nest` npm wrapper, which
+# downloads these exact assets from GitHub Releases at install time. Do not
+# rename, restructure, or re-encode anything here without updating that repo
+# in lockstep.
+#
+#   Archive filename : rat-<version>-<platform>-<arch>.<ext>
+#     <version> = the pushed tag with the leading "v" stripped (v1.4.2 -> 1.4.2)
+#     <platform>/<arch> = Node.js `process.platform` / `process.arch` values,
+#                         NOT Rust target triples:
+#                           linux  / x64    (x86_64-unknown-linux-gnu)
+#                           linux  / arm64  (aarch64-unknown-linux-gnu)
+#                           darwin / x64    (x86_64-apple-darwin)
+#                           darwin / arm64  (aarch64-apple-darwin)
+#                           win32  / x64    (x86_64-pc-windows-msvc)
+#     <ext> = tar.gz for linux/darwin, zip for win32
+#
+#   Binary inside the archive : always named `rat` (`rat.exe` on win32),
+#   with no version/platform suffix.
+#
+#   Also uploaded : a single SHA256SUMS file (standard `sha256sum` format,
+#   one "<hash>  <filename>" line per archive) covering all archives.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: x64
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - platform: darwin
+            arch: x64
+            target: x86_64-apple-darwin
+            os: macos-latest
+          - platform: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
+            os: macos-latest
+          - platform: win32
+            arch: x64
+            target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # aarch64-unknown-linux-gnu is the one leg that can't build natively on
+      # an x86_64 ubuntu-latest runner. The crate has no C dependencies, so a
+      # plain apt-installed cross gcc/binutils toolchain is enough - no need
+      # for `cross` (Docker) or `cargo zigbuild` here.
+      - name: Install aarch64 cross linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Strip binary (unix)
+        if: matrix.platform != 'win32'
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            aarch64-linux-gnu-strip target/${{ matrix.target }}/release/rat
+          else
+            strip target/${{ matrix.target }}/release/rat
+          fi
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package archive (unix)
+        if: matrix.platform != 'win32'
+        shell: bash
+        run: |
+          staging="rat-${{ steps.version.outputs.value }}-${{ matrix.platform }}-${{ matrix.arch }}"
+          mkdir "$staging"
+          cp "target/${{ matrix.target }}/release/rat" "$staging/rat"
+          tar czf "$staging.tar.gz" -C "$staging" rat
+          echo "asset=$staging.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package archive (windows)
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $staging = "rat-${{ steps.version.outputs.value }}-${{ matrix.platform }}-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/rat.exe" "$staging/rat.exe"
+          Compress-Archive -Path "$staging/rat.exe" -DestinationPath "$staging.zip"
+          echo "asset=$staging.zip" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.asset }}
+          path: ${{ env.asset }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          files: dist/*

@@ -1,0 +1,29 @@
+{
+  "name": "@p-w-g/ratnest",
+  "version": "0.1.0",
+  "description": "npm distribution wrapper for the rat CLI (downloads the prebuilt Rust binary for your platform)",
+  "license": "MIT",
+  "bin": {
+    "rat": "./bin/rat.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "scripts"
+  ],
+  "scripts": {
+    "postinstall": "node ./scripts/postinstall.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
