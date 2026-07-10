@@ -2,12 +2,16 @@ name: Rust CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, release]
   push:
-    branches: [main]
+    branches: [main, release]
 
 env:
   CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: rat
 
 jobs:
   lint:
@@ -23,6 +27,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rat -> target
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -45,6 +51,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rat -> target
 
       - name: Build
         run: cargo build --locked --verbose
