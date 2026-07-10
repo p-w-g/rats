@@ -1,12 +1,14 @@
 # Release asset naming contract
 # -------------------------------
-# This workflow is a public contract with the `rat-nest` npm wrapper, which
-# downloads these exact assets from GitHub Releases at install time. Do not
-# rename, restructure, or re-encode anything here without updating that repo
-# in lockstep.
+# This workflow is a public contract with the `rat-nest` npm wrapper
+# (rat-nest/src/releaseUrl.js), which downloads these exact assets from
+# GitHub Releases at install time. Do not rename, restructure, or re-encode
+# anything here without updating that module in lockstep.
 #
-#   Archive filename : rat-<version>-<platform>-<arch>.<ext>
-#     <version> = the pushed tag with the leading "v" stripped (v1.4.2 -> 1.4.2)
+#   Archive filename : rat-<platform>-<arch>.<ext>
+#     No version in the filename - it's implied by the release tag itself,
+#     and rat-nest's own package.json version is hard-locked to that tag
+#     (see the `publish-npm` job below), so there's nothing to disambiguate.
 #     <platform>/<arch> = Node.js `process.platform` / `process.arch` values,
 #                         NOT Rust target triples:
 #                           linux  / x64    (x86_64-unknown-linux-gnu)
@@ -21,6 +23,11 @@
 #
 #   Also uploaded : a single SHA256SUMS file (standard `sha256sum` format,
 #   one "<hash>  <filename>" line per archive) covering all archives.
+#   rat-nest verifies every download against this before trusting it.
+#
+# Releases are only ever cut from the `release` branch - the `guard` job
+# below enforces that a pushed tag actually points at a commit reachable
+# from `release` before anything builds.
 
 name: Release
 
@@ -33,8 +40,58 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  guard:
+    name: Verify tag is on release branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confirm tag is reachable from release
+        run: |
+          git fetch origin release:refs/remotes/origin/release
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/release; then
+            echo "::error::${{ github.ref_name }} points at a commit that is not on the release branch. Releases must be cut from release."
+            exit 1
+          fi
+
+  version:
+    name: Resolve version
+    needs: guard
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Textual edits only - no `cargo` invocation here - so this can't
+      # accidentally re-resolve (and drift) any dependency version. Both
+      # patterns are anchored so they can only ever touch the root
+      # package's own version line, never a dependency's.
+      - name: Stamp version into Cargo.toml and Cargo.lock
+        working-directory: rat
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          sed -i "0,/^version = \".*\"\$/s//version = \"$VERSION\"/" Cargo.toml
+          sed -i "/^name = \"rat\"\$/{n;s/^version = \".*\"\$/version = \"$VERSION\"/}" Cargo.lock
+
+      - name: Upload versioned Cargo files
+        uses: actions/upload-artifact@v4
+        with:
+          name: versioned-cargo-files
+          path: |
+            rat/Cargo.toml
+            rat/Cargo.lock
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -64,6 +121,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Overlay release-versioned Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: versioned-cargo-files
+          path: rat
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -72,6 +135,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
+          workspaces: rat -> target
           key: ${{ matrix.target }}
 
       # aarch64-unknown-linux-gnu is the one leg that can't build natively on
@@ -87,10 +151,12 @@ jobs:
           echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build release binary
+        working-directory: rat
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Strip binary (unix)
         if: matrix.platform != 'win32'
+        working-directory: rat
         run: |
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             aarch64-linux-gnu-strip target/${{ matrix.target }}/release/rat
@@ -98,16 +164,12 @@ jobs:
             strip target/${{ matrix.target }}/release/rat
           fi
 
-      - name: Determine version
-        id: version
-        shell: bash
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Package archive (unix)
         if: matrix.platform != 'win32'
         shell: bash
+        working-directory: rat
         run: |
-          staging="rat-${{ steps.version.outputs.value }}-${{ matrix.platform }}-${{ matrix.arch }}"
+          staging="rat-${{ matrix.platform }}-${{ matrix.arch }}"
           mkdir "$staging"
           cp "target/${{ matrix.target }}/release/rat" "$staging/rat"
           tar czf "$staging.tar.gz" -C "$staging" rat
@@ -116,8 +178,9 @@ jobs:
       - name: Package archive (windows)
         if: matrix.platform == 'win32'
         shell: pwsh
+        working-directory: rat
         run: |
-          $staging = "rat-${{ steps.version.outputs.value }}-${{ matrix.platform }}-${{ matrix.arch }}"
+          $staging = "rat-${{ matrix.platform }}-${{ matrix.arch }}"
           New-Item -ItemType Directory -Path $staging | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/rat.exe" "$staging/rat.exe"
           Compress-Archive -Path "$staging/rat.exe" -DestinationPath "$staging.zip"
@@ -127,7 +190,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.asset }}
-          path: ${{ env.asset }}
+          path: rat/${{ env.asset }}
           if-no-files-found: error
 
   release:
@@ -142,6 +205,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: rat-*
           merge-multiple: true
 
       - name: Generate SHA256SUMS
@@ -156,3 +220,27 @@ jobs:
           tag_name: ${{ github.ref_name }}
           draft: false
           files: dist/*
+
+  publish-npm:
+    name: Publish npm package
+    needs: [release, version]
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Set package version to match release
+        working-directory: rat-nest
+        run: npm version "${{ needs.version.outputs.value }}" --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        working-directory: rat-nest
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
