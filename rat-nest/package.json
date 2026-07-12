@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/p-w-g/rats.git",
+    "url": "git+https://github.com/p-w-g/rats.git",
     "directory": "rat-nest"
   },
   "bin": {
-    "rat": "./bin/rat.js"
+    "rat": "bin/rat.js"
   },
   "files": [
     "bin",
