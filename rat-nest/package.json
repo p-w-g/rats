@@ -1,6 +1,6 @@
 {
   "name": "@p-w-g/ratnest",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "npm distribution wrapper for the rat CLI (downloads the prebuilt Rust binary for your platform)",
   "license": "MIT",
   "repository": {
