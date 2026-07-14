@@ -69,6 +69,53 @@ Available commands:
                     touched by rat and always reach your command untouched,
                     e.g. `rat fep git commit -m "message"` is safe.
 
+    * pipe          Run an ordered pipeline of different commands, in
+                    different directories, where a step can be backgrounded
+                    and gated on readiness before the next one starts -
+                    e.g. start a dev server, wait until it's actually up,
+                    then start one that depends on it.
+
+                    Usage: `rat pipe [step-flags] -- <command...>
+                    [--then [step-flags] -- <command...> ...]`
+
+                    Example (two dev servers, second waits on the first):
+                    `rat pipe --dir studio --bg --ready-port 3333 \
+                      -- npm run dev \
+                      --then --dir blog -- npm run dev`
+
+                    Everything before a step's own `--` is that step's
+                    flags; everything after it, up to the next `--then` or
+                    the end of the command line, is the literal command to
+                    run - unrecognized flags before `--` are a hard error,
+                    unlike fep's silent-drop.
+
+                    Per-step flags (all optional):
+
+                      --dir <path>          directory to run this step's
+                                             command in (default: current
+                                             directory)
+                      --bg                   run this step in the
+                                             background instead of waiting
+                                             for it to exit; requires a
+                                             readiness rule
+                      --ready-port <n>       wait until something accepts a
+                                             TCP connection on
+                                             127.0.0.1:<n> before starting
+                                             the next step
+                      --ready-match <text>   wait until a line of this
+                                             step's stdout/stderr contains
+                                             <text>
+                      --ready-timeout <secs> how long to wait for readiness
+                                             before giving up (default: 30)
+
+                    A non-backgrounded step blocks the pipeline until it
+                    exits; a failing step (or a background step that never
+                    becomes ready) tears down every step already started
+                    and stops the pipeline. Once every declared step has
+                    started, rat pipe supervises any still-running
+                    background steps until Ctrl-C or one of them exits
+                    unexpectedly, tearing all of them down either way.
+
     * cfg (config)
     cfg path        prints out config file's path
     cfg file        prints out config file's content
@@ -104,6 +151,9 @@ mod tests {
         assert!(help_text().contains("rat cfg heed"));
         assert!(help_text().contains("rat cfg to"));
         assert!(help_text().contains("--recursive"));
+        assert!(help_text().contains("rat pipe"));
+        assert!(help_text().contains("--ready-port"));
+        assert!(help_text().contains("--ready-match"));
         // catches leftover `ath <command>` invocations from the C# original
         // without false-positiving on "path", which legitimately contains "ath"
         assert!(!help_text().contains("`ath "));

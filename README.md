@@ -13,8 +13,12 @@ cd-ing into each one by hand. It's a Rust rewrite of an earlier C# tool
   fans a command out across every immediate subdirectory of the working
   folder; `--recursive` walks the whole subtree instead, for
   monorepo-of-monorepos layouts. Skip/only filters, a persisted default
-  folder, timeouts, and concurrency control round it out. See
-  [`rat/README.md`](rat/README.md) for the full CLI reference.
+  folder, timeouts, and concurrency control round it out. `rat pipe` covers
+  the opposite shape - an ordered, readiness-gated pipeline of different
+  commands in different directories, e.g. starting a dev server in the
+  background and waiting until it's actually up before starting one that
+  depends on it. See [`rat/README.md`](rat/README.md) for the full CLI
+  reference.
 - **[`rat-nest/`](rat-nest/)** — the `@p-w-g/ratnest` npm package. It has no
   CLI logic of its own; it downloads, checksum-verifies, and execs the
   prebuilt `rat` binary for your platform, so `npm install -g
