@@ -187,14 +187,23 @@ fn run_with_interrupt_flag(steps: &[StepSpec], interrupted: &AtomicBool) -> bool
         }
     }
 
-    if running.is_empty() {
-        // Every step was foreground and the last one already exited
-        // successfully - there's nothing left to supervise.
+    // Whether to keep supervising depends on the *last declared step*, not
+    // just whether `running` happens to be non-empty: a pipeline can be
+    // background-then-foreground (build-and-serve, then a foreground test
+    // run against it), where an earlier background step is still alive but
+    // the pipeline's natural end is the foreground step that already
+    // exited. Using `running.is_empty()` here instead would wrongly fall
+    // through to supervising forever in exactly that shape - caught by
+    // hand-testing the build->serve->test case, where `rat pipe` hung
+    // instead of tearing the server down once the foreground step finished.
+    let last_step_is_background = steps.last().is_some_and(|s| s.background);
+    if !last_step_is_background {
+        teardown(&mut running);
         return last_foreground_success;
     }
 
-    // At least one background step is still alive with no more declared
-    // work - this is the steady state for an all-background pipeline (e.g.
+    // The last declared step is itself backgrounded, so there's no natural
+    // end - this is the steady state for an all-background pipeline (e.g.
     // two dev servers): supervise until Ctrl-C or an unexpected death.
     let outcome = supervise(&mut running, interrupted);
     teardown(&mut running);
@@ -381,6 +390,15 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     fn failing_command() -> String {
         "false".to_string()
+    }
+
+    #[cfg(target_os = "windows")]
+    fn echo_ready_then_sleep_command(seconds: u32) -> String {
+        format!("echo READY & ping -n {} 127.0.0.1 > nul", seconds + 1)
+    }
+    #[cfg(not(target_os = "windows"))]
+    fn echo_ready_then_sleep_command(seconds: u32) -> String {
+        format!("echo READY && sleep {seconds}")
     }
 
     fn spawn(command: &str) -> Child {
@@ -686,5 +704,46 @@ mod tests {
         // time out and the pipeline should fail without running the second
         // step at all.
         assert!(!run_with_interrupt_flag(&steps, &interrupted));
+    }
+
+    #[test]
+    fn run_with_interrupt_flag_tears_down_a_background_step_once_the_final_foreground_step_exits()
+    {
+        // Regression test for the build-and-serve-then-test shape (a
+        // background step followed by a foreground one): using
+        // `running.is_empty()` to decide whether to keep supervising was
+        // wrong here, since the background "server" step is still alive
+        // when the loop ends even though the pipeline's natural end is the
+        // foreground step that already exited - caught by hand-testing the
+        // real case, where this hung supervising forever instead of
+        // tearing "server" down and returning.
+        let interrupted = AtomicBool::new(false);
+        let steps = vec![
+            StepSpec {
+                label: "server".to_string(),
+                dir: std::env::temp_dir(),
+                command: echo_ready_then_sleep_command(30),
+                background: true,
+                readiness: Some(Readiness::Match("READY".to_string())),
+                ready_timeout: Duration::from_secs(5),
+            },
+            StepSpec {
+                label: "test".to_string(),
+                dir: std::env::temp_dir(),
+                command: noop_command(),
+                background: false,
+                readiness: None,
+                ready_timeout: Duration::from_secs(5),
+            },
+        ];
+
+        let start = Instant::now();
+        let success = run_with_interrupt_flag(&steps, &interrupted);
+        assert!(success);
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "pipeline should end once the final foreground step exits, not supervise \
+             forever just because an earlier background step is still alive"
+        );
     }
 }

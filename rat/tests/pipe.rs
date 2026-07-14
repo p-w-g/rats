@@ -160,6 +160,41 @@ fn readiness_timeout_fails_the_pipeline_without_running_the_next_step() {
 }
 
 #[test]
+fn a_successful_foreground_step_tears_down_an_earlier_background_step_instead_of_supervising_forever()
+{
+    // Regression test for the build-and-serve-then-test shape: the
+    // pipeline's last declared step is foreground, so once it exits
+    // successfully the whole run should end and tear the still-alive
+    // background step down - not fall through to supervising forever just
+    // because that step happens to still be running. Caught by hand-testing
+    // the real case, where `rat pipe` hung instead of returning.
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("marker");
+
+    let mut cmd = rat();
+    cmd.args(["pipe", "--bg", "--ready-match", "UP", "--"]);
+    cmd.args(argv(&signal_up_then_background_touch(&marker)));
+    cmd.args(["--then", "--", "echo", "done"]);
+
+    let start = std::time::Instant::now();
+    let output = cmd.output().unwrap();
+    let elapsed = start.elapsed();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success(), "{stdout}");
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "should end as soon as the foreground step exits, not wait around; took {elapsed:?}"
+    );
+
+    std::thread::sleep(grandchild_settle_time());
+    assert!(
+        !marker.exists(),
+        "the background step's grandchild survived even though the pipeline ended successfully"
+    );
+}
+
+#[test]
 fn a_failing_foreground_step_tears_down_the_whole_process_tree_of_earlier_background_steps() {
     let dir = tempfile::tempdir().unwrap();
     let marker = dir.path().join("marker");
