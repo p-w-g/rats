@@ -60,6 +60,7 @@ There are three top-level commands:
 ```
 rat help            # this help text
 rat fep <command>   # run <command> in every subfolder of the working folder
+rat pipe <steps...> # run an ordered, readiness-gated pipeline of different commands
 rat cfg <subcommand> # read/edit rat's own config
 ```
 
@@ -180,6 +181,51 @@ If you need to run something with a `--flag` that collides with rat's
 reserved words, put the real invocation in a small script and call the
 script instead (`rat fep ./do-the-thing.sh`), so nothing reaches rat's
 parser except the script name.
+
+### `pipe`: ordered, readiness-gated process pipelines
+
+`fep` fans **one** command out across **many** directories. `pipe` is the
+opposite shape: **different** commands, in **different** directories, run
+in declared order - where a step can be backgrounded (a dev server, a
+build-then-serve) and the next step shouldn't start until it's actually
+ready, not just until some fixed delay has passed.
+
+```
+rat pipe [step-flags] -- <command...> [--then [step-flags] -- <command...> ...]
+```
+
+Everything before a step's own `--` is that step's flags; everything after
+it, up to the next `--then` or the end of the command line, is the literal
+command to run for that step.
+
+| step flag               | meaning                                                                 |
+| ------------------------ | -------------------------------------------------------------------------|
+| `--dir <path>`           | directory to run this step in (default: current directory)              |
+| `--bg`                   | background this step instead of waiting for it to exit; requires a readiness rule |
+| `--ready-port <n>`       | wait until something accepts a TCP connection on `127.0.0.1:<n>`        |
+| `--ready-match <text>`   | wait until a line of this step's stdout/stderr contains `<text>`        |
+| `--ready-timeout <secs>` | how long to wait for readiness before giving up (default: 30)           |
+
+Example - start Sanity Studio's dev server, wait until it's actually
+listening, then start a blog dev server that depends on it, without two
+terminal tabs:
+
+```bash
+rat pipe --dir studio --bg --ready-port 3333 -- npm run dev \
+  --then --dir blog -- npm run dev
+```
+
+Both steps stream their output live, prefixed with the step's label (the
+last path component of `--dir`). Once every declared step has started, rat
+supervises any still-running background steps until Ctrl-C or one of them
+exits unexpectedly - tearing all of them down, whole process tree included,
+either way. A failing step (or a background step that never becomes ready)
+tears down everything already started and stops the pipeline immediately,
+rather than letting later steps run against a foundation that isn't there.
+
+`pipe` has its own small grammar and does **not** share `fep`'s
+`--flag-value` parsing or its silent-drop of unrecognized flags - a typo'd
+step flag is a hard error here.
 
 ### `cfg`: configuration
 
