@@ -543,6 +543,28 @@ fn fep_recursive_does_not_walk_into_a_skipped_directory() {
 }
 
 #[test]
+fn fep_recursive_reaches_arbitrarily_deep_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    let components = [
+        "a", "very", "stupidly", "long", "nesting", "because", "why", "not",
+    ];
+    std::fs::create_dir_all(nested(dir.path(), &components)).unwrap();
+
+    let output = rat()
+        .args(["fep", "echo", "marker", "--local", "--recursive"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let deepest = nested(dir.path(), &components).display().to_string();
+    assert!(
+        stdout.contains(&deepest),
+        "expected the deepest folder to be reached, got:\n{stdout}"
+    );
+}
+
+#[test]
 fn fep_reports_when_no_subdirectories_match() {
     // Regression test: a working folder with nothing to run in (empty, or
     // everything filtered out) used to print nothing at all and exit 0,

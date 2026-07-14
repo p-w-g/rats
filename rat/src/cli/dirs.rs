@@ -363,6 +363,30 @@ mod tests {
     }
 
     #[test]
+    fn recursive_walk_reaches_arbitrarily_deep_nesting() {
+        // The walk is a `pending` Vec used as an explicit work stack, not
+        // recursive function calls - this guards against a future rewrite
+        // reintroducing real recursion, which would risk a stack overflow
+        // on a sufficiently deep tree instead of just growing a heap-backed
+        // Vec.
+        let dir = tempfile::tempdir().unwrap();
+        let components = [
+            "a", "very", "stupidly", "long", "nesting", "because", "why", "not",
+        ];
+        let deepest = components
+            .iter()
+            .fold(dir.path().to_path_buf(), |acc, c| acc.join(c));
+        std::fs::create_dir_all(&deepest).unwrap();
+
+        let result =
+            available_directories_recursive(dir.path(), None, &FilterExpression::default())
+                .unwrap();
+
+        assert_eq!(result.len(), components.len());
+        assert!(result.contains(&deepest));
+    }
+
+    #[test]
     fn recursive_walk_never_includes_the_working_directory_itself() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("api")).unwrap();
