@@ -22,6 +22,13 @@ Available commands:
 
                       --local             use CWD for this run, even if a
                                           default folder is configured
+                      --recursive (--r)   walk the whole subtree instead of
+                                          just the immediate subfolders, for
+                                          monorepo-of-monorepos layouts;
+                                          combine with --skip or `cfg ignore`
+                                          to prune folders (e.g.
+                                          node_modules) instead of walking
+                                          into them
                       --concurrency-4     run at most 4 directories at once
                                           (default: number of CPUs)
                       --sync              run exactly one directory at a
@@ -49,8 +56,8 @@ Available commands:
                     IMPORTANT: rat parses these flags out of <<command>>
                     itself, before your command ever runs. Any `--word...`
                     you pass that starts with
-                    local/skip/only/sustain/timeout/sync is captured by rat
-                    instead of reaching your command, and
+                    local/skip/only/sustain/timeout/sync/recursive/r is
+                    captured by rat instead of reaching your command, and
                     any other unrecognized `--flag` is silently dropped
                     rather than forwarded. So:
 
@@ -96,6 +103,7 @@ mod tests {
         assert!(help_text().contains("rat cfg ignore"));
         assert!(help_text().contains("rat cfg heed"));
         assert!(help_text().contains("rat cfg to"));
+        assert!(help_text().contains("--recursive"));
         // catches leftover `ath <command>` invocations from the C# original
         // without false-positiving on "path", which legitimately contains "ath"
         assert!(!help_text().contains("`ath "));
