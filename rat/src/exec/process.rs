@@ -64,13 +64,13 @@ struct Outcome {
 /// chains) work instead of failing outright with "No such file or
 /// directory" on every single subdirectory.
 #[cfg(not(target_os = "windows"))]
-const SHELL_CANDIDATES: &[&str] = &["/bin/bash", "/bin/sh"];
+pub(crate) const SHELL_CANDIDATES: &[&str] = &["/bin/bash", "/bin/sh"];
 
 /// cmd.exe is a core, always-present Windows component, so there's no
 /// equivalent fallback concern here - kept as a one-element list so
 /// `spawn_shell` doesn't need a separate single-shell code path.
 #[cfg(target_os = "windows")]
-const SHELL_CANDIDATES: &[&str] = &["cmd.exe"];
+pub(crate) const SHELL_CANDIDATES: &[&str] = &["cmd.exe"];
 
 /// Builds the (not yet spawned) `Command` that runs `command` through
 /// `shell`.
@@ -85,7 +85,7 @@ const SHELL_CANDIDATES: &[&str] = &["cmd.exe"];
 /// cmd.exe (and, in turn, whatever program it invokes) does its own
 /// parsing of that text, not Rust's.
 #[cfg(target_os = "windows")]
-fn build_shell_command(shell: &str, command: &str) -> Command {
+pub(crate) fn build_shell_command(shell: &str, command: &str) -> Command {
     use std::os::windows::process::CommandExt;
     let mut cmd = Command::new(shell);
     cmd.arg("/c");
@@ -94,7 +94,7 @@ fn build_shell_command(shell: &str, command: &str) -> Command {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn build_shell_command(shell: &str, command: &str) -> Command {
+pub(crate) fn build_shell_command(shell: &str, command: &str) -> Command {
     let mut cmd = Command::new(shell);
     cmd.arg("-c").arg(command);
     cmd
@@ -105,7 +105,7 @@ fn build_shell_command(shell: &str, command: &str) -> Command {
 /// Candidates are only skipped on `NotFound` (the shell binary itself is
 /// missing) - any other spawn error (permissions, ...) is reported as-is
 /// rather than masked by trying further candidates.
-fn spawn_shell(
+pub(crate) fn spawn_shell(
     command: &str,
     working_directory: &Path,
     candidates: &[&str],
@@ -269,7 +269,7 @@ fn append_stream(body: &mut String, label: &str, content: &str) {
 /// `killed` avoids re-issuing `kill` against a pid already handled in an
 /// earlier pass.
 #[cfg(not(target_os = "windows"))]
-fn kill_process_tree(child: &mut std::process::Child) {
+pub(crate) fn kill_process_tree(child: &mut std::process::Child) {
     const DESCENDANT_SCAN_PASSES: u32 = 5;
     const PASS_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -338,7 +338,7 @@ fn descendant_pids(root: u32) -> Vec<u32> {
 }
 
 #[cfg(target_os = "windows")]
-fn kill_process_tree(child: &mut std::process::Child) {
+pub(crate) fn kill_process_tree(child: &mut std::process::Child) {
     let pid = child.id();
     let _ = Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
