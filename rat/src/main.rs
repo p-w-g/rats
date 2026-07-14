@@ -20,6 +20,11 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "pipe" => {
+            if !commands::pipe::run(&args[1..]) {
+                std::process::exit(1);
+            }
+        }
         "cfg" => config::evaluate(&instance),
         _ => println!("Unknown command: {command} - refer to help (rat help)"),
     }
