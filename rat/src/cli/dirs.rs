@@ -90,6 +90,47 @@ fn filter_available_directories(
     directories
 }
 
+/// Like `available_directories`, but walks the whole subtree instead of just
+/// the immediate children - for monorepo-of-monorepos layouts (e.g. a
+/// top-level workspace folder containing `foo/` and `bar/`, each of which is
+/// itself a workspace of packages) where the packages you actually want to
+/// reach are more than one level down.
+///
+/// Every directory at every depth that passes the ignore/`only`/`skip`
+/// filters is included in the result - not just leaves - since there's no
+/// way to know in advance which level of a mixed-depth tree holds the
+/// directories a given command cares about.
+///
+/// A directory that fails the filters (permanently ignored, or excluded by
+/// `only`/`skip`) is not just omitted from the result, it is also not
+/// descended into. This is deliberate, not just reused plumbing: without it,
+/// `rat fep --recursive rm -rf node_modules` would walk into every
+/// `node_modules` tree it finds before ever getting a chance to delete one,
+/// turning a fast operation into a slow crawl through someone else's
+/// dependency graph. Excluding a directory from recursion is a natural
+/// consequence of reusing `available_directories` for each level rather than
+/// a special case - but it's also exactly the behavior this needs, so
+/// pairing `--recursive` with `--skip-node_modules` (or `cfg ignore
+/// node_modules`) prunes those trees instead of walking them.
+pub fn available_directories_recursive(
+    working_directory: &Path,
+    ignored_folders: Option<&[String]>,
+    filter: &FilterExpression,
+) -> io::Result<Vec<PathBuf>> {
+    let mut result = Vec::new();
+    let mut pending = vec![working_directory.to_path_buf()];
+
+    while let Some(dir) = pending.pop() {
+        let children = available_directories(&dir, ignored_folders, filter)?;
+        for child in children {
+            pending.push(child.clone());
+            result.push(child);
+        }
+    }
+
+    Ok(result)
+}
+
 /// The permanently-ignored list (`cfg ignore`, plus the built-in
 /// `ALWAYS_IGNORED`) is matched by substring on the full path, same as the
 /// original's `dir.Contains(path)`. This is a separate, persistent,
@@ -258,5 +299,87 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].file_name().unwrap().to_string_lossy(), "api");
+    }
+
+    fn names_of(result: Vec<PathBuf>) -> Vec<String> {
+        let mut names: Vec<String> = result
+            .into_iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn recursive_walk_finds_directories_at_every_depth() {
+        // Mirrors the motivating monorepo-of-monorepos layout: a top-level
+        // workspace folder containing workspace folders (`foo/`, `bar/`),
+        // each of which is itself a workspace of packages (`foo/baz/`,
+        // `bar/qux/`) one level further down.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("foo/baz")).unwrap();
+        std::fs::create_dir_all(dir.path().join("bar/qux")).unwrap();
+
+        let result =
+            available_directories_recursive(dir.path(), None, &FilterExpression::default())
+                .unwrap();
+
+        assert_eq!(names_of(result), vec!["bar", "baz", "foo", "qux"]);
+    }
+
+    #[test]
+    fn recursive_walk_does_not_descend_into_an_ignored_directory() {
+        // The whole point of pruning: a directory excluded by `cfg
+        // ignore`/`--skip` must not be walked into either, otherwise
+        // `--recursive` combined with `--skip-node_modules` would still
+        // crawl the entire node_modules tree before ever reaching it.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("api/node_modules/some-dep")).unwrap();
+
+        let result = available_directories_recursive(
+            dir.path(),
+            Some(&strings(&["node_modules"])),
+            &FilterExpression::default(),
+        )
+        .unwrap();
+
+        assert_eq!(names_of(result), vec!["api"]);
+    }
+
+    #[test]
+    fn recursive_walk_prunes_directories_excluded_by_skip() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("foo/node_modules/some-dep")).unwrap();
+        std::fs::create_dir_all(dir.path().join("bar/qux")).unwrap();
+
+        let result = available_directories_recursive(
+            dir.path(),
+            None,
+            &filter(None, Some(&["node_modules"])),
+        )
+        .unwrap();
+
+        assert_eq!(names_of(result), vec!["bar", "foo", "qux"]);
+    }
+
+    #[test]
+    fn recursive_walk_never_includes_the_working_directory_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("api")).unwrap();
+
+        let result =
+            available_directories_recursive(dir.path(), None, &FilterExpression::default())
+                .unwrap();
+
+        assert!(!result.contains(&dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn recursive_walk_on_an_empty_directory_returns_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let result =
+            available_directories_recursive(dir.path(), None, &FilterExpression::default())
+                .unwrap();
+        assert!(result.is_empty());
     }
 }
