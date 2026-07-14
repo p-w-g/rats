@@ -22,6 +22,18 @@ fn create_dirs(root: &Path, names: &[&str]) {
     }
 }
 
+/// Joins path components one at a time rather than via a single "a/b"
+/// string. `Path::join("a/b")` does not normalize the embedded `/` to `\` on
+/// Windows, so a path built that way carries a literal forward slash that
+/// never matches the all-backslash paths `fep` actually reports - joining
+/// component by component avoids baking a Unix separator into a Windows
+/// path.
+fn nested(root: &Path, components: &[&str]) -> std::path::PathBuf {
+    components
+        .iter()
+        .fold(root.to_path_buf(), |acc, c| acc.join(c))
+}
+
 /// Runs `fep echo marker` with the given extra flags and returns the subset
 /// of `COUNTRY_APP_DIRS` that the run actually reported executing in.
 fn run_and_collect_matches(root: &Path, extra_flags: &[&str]) -> Vec<&'static str> {
@@ -434,8 +446,8 @@ fn fep_recursive_reaches_nested_monorepo_packages() {
     // level down. Without --recursive, fep only reaches the immediate
     // children.
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("rats/rat-nest")).unwrap();
-    std::fs::create_dir_all(dir.path().join("momentum/moments")).unwrap();
+    std::fs::create_dir_all(nested(dir.path(), &["rats", "rat-nest"])).unwrap();
+    std::fs::create_dir_all(nested(dir.path(), &["momentum", "moments"])).unwrap();
 
     let output = rat()
         .args(["fep", "echo", "marker", "--local", "--recursive"])
@@ -444,10 +456,16 @@ fn fep_recursive_reaches_nested_monorepo_packages() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    for nested in ["rats", "momentum", "rats/rat-nest", "momentum/moments"] {
+    for components in [
+        &["rats"][..],
+        &["momentum"][..],
+        &["rats", "rat-nest"][..],
+        &["momentum", "moments"][..],
+    ] {
+        let expected = nested(dir.path(), components).display().to_string();
         assert!(
-            stdout.contains(&dir.path().join(nested).display().to_string()),
-            "expected {nested} to be reached, got:\n{stdout}"
+            stdout.contains(&expected),
+            "expected {components:?} to be reached, got:\n{stdout}"
         );
     }
 }
@@ -455,7 +473,7 @@ fn fep_recursive_reaches_nested_monorepo_packages() {
 #[test]
 fn fep_short_recursive_alias_behaves_like_the_full_flag() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("rats/rat-nest")).unwrap();
+    std::fs::create_dir_all(nested(dir.path(), &["rats", "rat-nest"])).unwrap();
 
     let output = rat()
         .args(["fep", "echo", "marker", "--local", "--r"])
@@ -464,13 +482,19 @@ fn fep_short_recursive_alias_behaves_like_the_full_flag() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert!(stdout.contains(&dir.path().join("rats/rat-nest").display().to_string()));
+    assert!(
+        stdout.contains(
+            &nested(dir.path(), &["rats", "rat-nest"])
+                .display()
+                .to_string()
+        )
+    );
 }
 
 #[test]
 fn fep_without_recursive_does_not_reach_nested_packages() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("rats/rat-nest")).unwrap();
+    std::fs::create_dir_all(nested(dir.path(), &["rats", "rat-nest"])).unwrap();
 
     let output = rat()
         .args(["fep", "echo", "marker", "--local"])
@@ -480,7 +504,13 @@ fn fep_without_recursive_does_not_reach_nested_packages() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(stdout.contains(&dir.path().join("rats").display().to_string()));
-    assert!(!stdout.contains(&dir.path().join("rats/rat-nest").display().to_string()));
+    assert!(
+        !stdout.contains(
+            &nested(dir.path(), &["rats", "rat-nest"])
+                .display()
+                .to_string()
+        )
+    );
 }
 
 #[test]
@@ -491,7 +521,7 @@ fn fep_recursive_does_not_walk_into_a_skipped_directory() {
     // `rat fep --recursive rm -rf node_modules` would crawl every dependency
     // inside node_modules before ever getting to delete one.
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("api/node_modules/some-dep")).unwrap();
+    std::fs::create_dir_all(nested(dir.path(), &["api", "node_modules", "some-dep"])).unwrap();
 
     let output = rat()
         .args([
@@ -508,11 +538,16 @@ fn fep_recursive_does_not_walk_into_a_skipped_directory() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(stdout.contains(&dir.path().join("api").display().to_string()));
-    assert!(!stdout.contains(&dir.path().join("api/node_modules").display().to_string()));
     assert!(
         !stdout.contains(
-            &dir.path()
-                .join("api/node_modules/some-dep")
+            &nested(dir.path(), &["api", "node_modules"])
+                .display()
+                .to_string()
+        )
+    );
+    assert!(
+        !stdout.contains(
+            &nested(dir.path(), &["api", "node_modules", "some-dep"])
                 .display()
                 .to_string()
         )
