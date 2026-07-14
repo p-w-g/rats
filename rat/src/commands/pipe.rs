@@ -190,7 +190,9 @@ mod tests {
 
     #[test]
     fn split_on_then_splits_on_the_literal_separator() {
-        let a = args(&["--dir", "a", "--", "echo", "hi", "--then", "--", "echo", "bye"]);
+        let a = args(&[
+            "--dir", "a", "--", "echo", "hi", "--then", "--", "echo", "bye",
+        ]);
         let chunks = split_on_then(&a);
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0], &a[0..5]);
@@ -230,7 +232,17 @@ mod tests {
 
     #[test]
     fn bg_step_with_ready_port_parses() {
-        let a = args(&["--dir", "studio", "--bg", "--ready-port", "3333", "--", "npm", "run", "dev"]);
+        let a = args(&[
+            "--dir",
+            "studio",
+            "--bg",
+            "--ready-port",
+            "3333",
+            "--",
+            "npm",
+            "run",
+            "dev",
+        ]);
         let steps = parse_steps(&a).unwrap();
         assert!(steps[0].background);
         assert_eq!(steps[0].readiness, Some(Readiness::Port(3333)));
@@ -240,13 +252,24 @@ mod tests {
     fn bg_step_with_ready_match_parses() {
         let a = args(&["--bg", "--ready-match", "Local:", "--", "npm", "run", "dev"]);
         let steps = parse_steps(&a).unwrap();
-        assert_eq!(steps[0].readiness, Some(Readiness::Match("Local:".to_string())));
+        assert_eq!(
+            steps[0].readiness,
+            Some(Readiness::Match("Local:".to_string()))
+        );
     }
 
     #[test]
     fn ready_timeout_flag_overrides_default() {
         let a = args(&[
-            "--bg", "--ready-port", "80", "--ready-timeout", "5", "--", "npm", "run", "dev",
+            "--bg",
+            "--ready-port",
+            "80",
+            "--ready-timeout",
+            "5",
+            "--",
+            "npm",
+            "run",
+            "dev",
         ]);
         let steps = parse_steps(&a).unwrap();
         assert_eq!(steps[0].ready_timeout, Duration::from_secs(5));
@@ -255,8 +278,22 @@ mod tests {
     #[test]
     fn multiple_steps_split_on_then() {
         let a = args(&[
-            "--dir", "studio", "--bg", "--ready-port", "3333", "--", "npm", "run", "dev",
-            "--then", "--dir", "blog", "--", "npm", "run", "dev",
+            "--dir",
+            "studio",
+            "--bg",
+            "--ready-port",
+            "3333",
+            "--",
+            "npm",
+            "run",
+            "dev",
+            "--then",
+            "--dir",
+            "blog",
+            "--",
+            "npm",
+            "run",
+            "dev",
         ]);
         let steps = parse_steps(&a).unwrap();
         assert_eq!(steps.len(), 2);
@@ -306,7 +343,15 @@ mod tests {
     #[test]
     fn both_readiness_flags_together_is_an_error() {
         let a = args(&[
-            "--bg", "--ready-port", "80", "--ready-match", "up", "--", "npm", "run", "dev",
+            "--bg",
+            "--ready-port",
+            "80",
+            "--ready-match",
+            "up",
+            "--",
+            "npm",
+            "run",
+            "dev",
         ]);
         let err = parse_steps(&a).unwrap_err();
         assert!(err.contains("mutually exclusive"), "{err}");
@@ -314,7 +359,15 @@ mod tests {
 
     #[test]
     fn invalid_port_value_is_an_error() {
-        let a = args(&["--bg", "--ready-port", "not-a-port", "--", "npm", "run", "dev"]);
+        let a = args(&[
+            "--bg",
+            "--ready-port",
+            "not-a-port",
+            "--",
+            "npm",
+            "run",
+            "dev",
+        ]);
         let err = parse_steps(&a).unwrap_err();
         assert!(err.contains("valid port number"), "{err}");
     }
@@ -322,7 +375,15 @@ mod tests {
     #[test]
     fn invalid_timeout_value_is_an_error() {
         let a = args(&[
-            "--bg", "--ready-port", "80", "--ready-timeout", "soon", "--", "npm", "run", "dev",
+            "--bg",
+            "--ready-port",
+            "80",
+            "--ready-timeout",
+            "soon",
+            "--",
+            "npm",
+            "run",
+            "dev",
         ]);
         let err = parse_steps(&a).unwrap_err();
         assert!(err.contains("whole number of seconds"), "{err}");

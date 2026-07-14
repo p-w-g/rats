@@ -3,8 +3,8 @@ use std::io::{BufRead, BufReader, Read};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::Child;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -84,15 +84,15 @@ fn run_with_interrupt_flag(steps: &[StepSpec], interrupted: &AtomicBool) -> bool
             if step.background { " (background)" } else { "" }
         );
 
-        let mut child = match process::spawn_shell(&step.command, &step.dir, process::SHELL_CANDIDATES)
-        {
-            Ok(child) => child,
-            Err(e) => {
-                println!("Couldn't start step '{}': {e}", step.label);
-                teardown(&mut running);
-                return false;
-            }
-        };
+        let mut child =
+            match process::spawn_shell(&step.command, &step.dir, process::SHELL_CANDIDATES) {
+                Ok(child) => child,
+                Err(e) => {
+                    println!("Couldn't start step '{}': {e}", step.label);
+                    teardown(&mut running);
+                    return false;
+                }
+            };
 
         let matched = Arc::new(AtomicBool::new(false));
         let match_text: Option<Arc<str>> = match &step.readiness {
@@ -101,7 +101,12 @@ fn run_with_interrupt_flag(steps: &[StepSpec], interrupted: &AtomicBool) -> bool
         };
         let stdout = child.stdout.take().expect("stdout was piped");
         let stderr = child.stderr.take().expect("stderr was piped");
-        spawn_line_reader(step.label.clone(), stdout, match_text.clone(), Arc::clone(&matched));
+        spawn_line_reader(
+            step.label.clone(),
+            stdout,
+            match_text.clone(),
+            Arc::clone(&matched),
+        );
         spawn_line_reader(step.label.clone(), stderr, match_text, Arc::clone(&matched));
 
         if step.background {
@@ -707,8 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn run_with_interrupt_flag_tears_down_a_background_step_once_the_final_foreground_step_exits()
-    {
+    fn run_with_interrupt_flag_tears_down_a_background_step_once_the_final_foreground_step_exits() {
         // Regression test for the build-and-serve-then-test shape (a
         // background step followed by a foreground one): using
         // `running.is_empty()` to decide whether to keep supervising was

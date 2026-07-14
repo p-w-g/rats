@@ -50,7 +50,10 @@ fn signal_up_then_background_touch(marker: &Path) -> String {
 }
 #[cfg(not(target_os = "windows"))]
 fn signal_up_then_background_touch(marker: &Path) -> String {
-    format!("echo UP && (sleep 0.5 && touch {}) & wait", marker.display())
+    format!(
+        "echo UP && (sleep 0.5 && touch {}) & wait",
+        marker.display()
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -80,7 +83,10 @@ fn help_alias_prints_usage_and_exits_zero() {
 
 #[test]
 fn missing_separator_reports_error_and_exits_nonzero() {
-    let output = rat().args(["pipe", "--dir", "x", "echo", "hi"]).output().unwrap();
+    let output = rat()
+        .args(["pipe", "--dir", "x", "echo", "hi"])
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("missing '--'"), "{stdout}");
     assert!(!output.status.success());
@@ -99,7 +105,10 @@ fn bg_without_readiness_reports_error_and_exits_nonzero() {
 
 #[test]
 fn runs_a_single_foreground_step() {
-    let output = rat().args(["pipe", "--", "echo", "hello"]).output().unwrap();
+    let output = rat()
+        .args(["pipe", "--", "echo", "hello"])
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("[step 1] hello"), "{stdout}");
     assert!(output.status.success());
@@ -161,7 +170,7 @@ fn readiness_timeout_fails_the_pipeline_without_running_the_next_step() {
 
 #[test]
 fn a_successful_foreground_step_tears_down_an_earlier_background_step_instead_of_supervising_forever()
-{
+ {
     // Regression test for the build-and-serve-then-test shape: the
     // pipeline's last declared step is foreground, so once it exits
     // successfully the whole run should end and tear the still-alive
