@@ -12,6 +12,8 @@ const VALID_OPTIONS: &[&str] = &[
     "all",
     "concurrency",
     "sync",
+    "recursive",
+    "r",
 ];
 
 #[derive(Debug, Default, PartialEq)]
@@ -111,6 +113,19 @@ mod tests {
         // ever removed from that list without a test noticing.
         let parsed = parse_instance(&args(&["--sync"]));
         assert_eq!(parsed.options.get("sync"), Some(&vec![]));
+    }
+
+    #[test]
+    fn recursive_flag_and_its_short_alias_are_recognized() {
+        // Guards against `--recursive`/`--r` being silently dropped as
+        // unrecognized flags (the fate of any option not listed in
+        // VALID_OPTIONS) if they're ever removed from that list without a
+        // test noticing.
+        let parsed = parse_instance(&args(&["--recursive"]));
+        assert_eq!(parsed.options.get("recursive"), Some(&vec![]));
+
+        let parsed = parse_instance(&args(&["--r"]));
+        assert_eq!(parsed.options.get("r"), Some(&vec![]));
     }
 
     #[test]

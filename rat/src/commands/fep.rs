@@ -72,7 +72,15 @@ pub fn run_parallel(instance: &ParsedArgs) -> bool {
         instance.options.get("skip").map(Vec::as_slice),
     );
 
-    let available_dirs = match dirs::available_directories(&working_directory, ignored, &filter) {
+    let recursive =
+        instance.options.contains_key("recursive") || instance.options.contains_key("r");
+    let listing = if recursive {
+        dirs::available_directories_recursive(&working_directory, ignored, &filter)
+    } else {
+        dirs::available_directories(&working_directory, ignored, &filter)
+    };
+
+    let available_dirs = match listing {
         Ok(dirs) => dirs,
         Err(e) => {
             println!(
