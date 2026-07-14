@@ -79,6 +79,7 @@ once per immediate subdirectory of the working folder, in parallel.
 | flag                  | meaning                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------- |
 | `--local`              | use the current directory for this run, even if a default folder is set via `cfg here`            |
+| `--recursive` / `--r`  | walk the whole subtree, not just immediate subfolders - see below                                  |
 | `--concurrency-4`      | run at most 4 directories at once (default: number of CPUs)                                        |
 | `--sync`               | run exactly one directory at a time (equivalent to `--concurrency-1`); wins over `--concurrency` if both are given |
 | `--only-uk-fi`         | only run in subfolders that have `uk` or `fi` as a `-`-separated name component                    |
@@ -99,6 +100,32 @@ multi-step, stateful sequence you generally want to run one repository at a
 time rather than in parallel. `--sync` runs exactly one directory at a time;
 it's equivalent to `--concurrency-1`, just with clearer intent at the call
 site (and it wins if you also pass `--concurrency`).
+
+### `--recursive`/`--r`: monorepo-of-monorepos layouts
+
+By default `fep` only reaches the *immediate* subfolders of the working
+folder. If your workspace folder contains `foo/` and `bar/`, and each of
+those is itself a workspace of packages (`foo/baz/`, `bar/qux/`), plain
+`fep` run from the workspace root never reaches `foo/baz/` or `bar/qux/` -
+only `foo/` and `bar/` themselves. Add `--recursive` (or its short alias
+`--r`) to walk the whole subtree instead, running the command in every
+matching directory at every depth:
+
+```bash
+rat fep --recursive git status
+```
+
+A directory excluded by `cfg ignore` or `--skip` is pruned from the walk,
+not just excluded from the run - `fep` never descends into it in the first
+place. This matters for anything dependency-tree-shaped: without it,
+`rat fep --recursive rm -rf node_modules` would crawl every package inside
+every `node_modules` it finds before ever getting a chance to delete one.
+Pair `--recursive` with `--skip-node_modules` (or a standing `cfg ignore
+node_modules`) to prune those trees instead:
+
+```bash
+rat fep --recursive --skip-node_modules rm -rf node_modules
+```
 
 ### `--only`/`--skip`: component-aware directory matching
 
@@ -135,8 +162,9 @@ rat parses `--flags` out of the command you pass to `fep` *before* your
 command ever runs - your shell doesn't get a say. Specifically:
 
 - Any `--word...` in your command where `word` is one of rat's reserved
-  words (`local`, `skip`, `only`, `sustain`, `timeout`, `sync`) is captured
-  by rat as its own flag and **never reaches your command**.
+  words (`local`, `skip`, `only`, `sustain`, `timeout`, `sync`, `recursive`,
+  `r`) is captured by rat as its own flag and **never reaches your
+  command**.
 - Any other unrecognized `--flag` is **silently dropped** - not passed to
   your command, not treated as a rat option, just gone.
 - Single-dash flags (`-m`, `-rf`, `-n`, ...) are **never** touched by rat and

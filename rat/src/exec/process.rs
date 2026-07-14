@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -252,18 +253,53 @@ fn append_stream(body: &mut String, label: &str, content: &str) {
 /// FFI/job-object APIs, keeping this dependency- and unsafe-free; a failed
 /// kill attempt (e.g. the process already exited) is not itself an error
 /// here; whatever remains is caught by the `child.wait()` right after.
+///
+/// Fix: `descendant_pids` is a single point-in-time `ps` snapshot, and a
+/// single snapshot-then-kill pass raced a genuinely-observed CI failure -
+/// the timed-out shell forks its backgrounded job (e.g. `cmd &`)
+/// essentially immediately, but under the CPU contention of a loaded CI
+/// runner (many parallel test processes competing for a couple of vCPUs),
+/// that fork's own scheduling can lag past this function even being called.
+/// If the grandchild isn't in the process table yet at snapshot time, the
+/// one-shot version never sees it, kills only the parts it did see, and the
+/// still-forking grandchild survives as an orphan once its parent is dead -
+/// exactly what this function exists to prevent. Repeating the
+/// snapshot-and-kill a few times, waiting for the root shell to actually
+/// die last, catches descendants that only become visible between passes;
+/// `killed` avoids re-issuing `kill` against a pid already handled in an
+/// earlier pass.
 #[cfg(not(target_os = "windows"))]
 fn kill_process_tree(child: &mut std::process::Child) {
+    const DESCENDANT_SCAN_PASSES: u32 = 5;
+    const PASS_INTERVAL: Duration = Duration::from_millis(50);
+
     let pid = child.id();
-    for descendant in descendant_pids(pid) {
-        let _ = Command::new("kill")
-            .arg("-KILL")
-            .arg(descendant.to_string())
-            .status();
+    let mut killed = HashSet::new();
+    for pass in 0..DESCENDANT_SCAN_PASSES {
+        for descendant in descendant_pids(pid) {
+            if killed.insert(descendant) {
+                kill_pid(descendant);
+            }
+        }
+        if pass + 1 < DESCENDANT_SCAN_PASSES {
+            thread::sleep(PASS_INTERVAL);
+        }
     }
+    kill_pid(pid);
+}
+
+/// `kill`'s own stdout/stderr (e.g. "No such process" for a pid that
+/// already exited on its own - an expected, harmless race, not a bug) would
+/// otherwise inherit this process's stdio and bleed directly into whatever
+/// is capturing it (a terminal, or - unlabeled and confusing - CI test
+/// output), since `Command::status()` inherits stdio by default.
+#[cfg(not(target_os = "windows"))]
+fn kill_pid(pid: u32) {
     let _ = Command::new("kill")
         .arg("-KILL")
         .arg(pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status();
 }
 
