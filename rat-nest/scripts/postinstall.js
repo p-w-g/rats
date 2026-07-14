@@ -6,7 +6,7 @@
 // network access (sandboxed CI, corporate proxies) would otherwise break
 // entirely. bin/rat.js calls the same ensureBinary() lazily on first run, so
 // nothing is lost if this step can't complete — it's just slower once.
-const { ensureBinary } = require('../src/installer');
+const { ensureBinary } = require('../src/cache');
 
 ensureBinary()
   .then(() => {

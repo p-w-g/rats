@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-const { ensureBinary } = require('../src/installer');
-const { runBinary } = require('../src/run');
+const { ensureBinary } = require('../src/cache');
+const { runBinary } = require('../src/exec');
 
 async function main() {
   let binaryPath;

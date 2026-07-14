@@ -3,8 +3,13 @@
   "version": "0.1.0",
   "description": "npm distribution wrapper for the rat CLI (downloads the prebuilt Rust binary for your platform)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p-w-g/rats.git",
+    "directory": "rat-nest"
+  },
   "bin": {
-    "rat": "./bin/rat.js"
+    "rat": "bin/rat.js"
   },
   "files": [
     "bin",
@@ -12,7 +17,11 @@
     "scripts"
   ],
   "scripts": {
-    "postinstall": "node ./scripts/postinstall.js"
+    "postinstall": "node ./scripts/postinstall.js",
+    "test": "node --test"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=18"
