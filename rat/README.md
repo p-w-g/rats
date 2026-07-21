@@ -83,8 +83,8 @@ once per immediate subdirectory of the working folder, in parallel.
 | `--recursive` / `--r`  | walk the whole subtree, not just immediate subfolders - see below                                  |
 | `--concurrency-4`      | run at most 4 directories at once (default: number of CPUs)                                        |
 | `--sync`               | run exactly one directory at a time (equivalent to `--concurrency-1`); wins over `--concurrency` if both are given |
-| `--only-uk-fi`         | only run in subfolders that have `uk` or `fi` as a `-`-separated name component (also accepts `--only-uk,fi`) |
-| `--skip-priv-corp`     | skip subfolders that have `priv` or `corp` as a name component (combines with `--only`, see below)  |
+| `--only-uk-fi`         | only run in subfolders with a `-`-separated name component containing `uk` or `fi` (also accepts `--only-uk,fi`) - see below |
+| `--skip-priv-corp`     | skip subfolders with a name component containing `priv` or `corp` (combines with `--only`, see below) |
 | `--sustain`            | wait as long as it takes, ignoring any timeout                                                     |
 | `--timeout-30`         | timeout *this run* after 30 seconds, overriding the configured timeout                             |
 
@@ -131,8 +131,16 @@ rat fep --recursive --skip-node_modules rm -rf node_modules
 ### `--only`/`--skip`: component-aware directory matching
 
 A subfolder's name is split into components on `-` (e.g. `uk-priv-app`
-tokenizes to `uk`, `priv`, `app`); `--only`/`--skip` match whole components,
-not an arbitrary substring of the folder's path. Given
+tokenizes to `uk`, `priv`, `app`); `--only`/`--skip` match a component by
+**substring**, not an arbitrary substring of the folder's *path*. `--only-uk`
+matches any component containing `uk` - so besides `uk-priv-app` (component
+`uk`), it also matches folders like `ukpr-app` and `nlukx-app` (components
+`ukpr` and `nlukx`, with no dash isolating `uk`), not just a component
+that's exactly `uk`. This is deliberately looser than a `uk-pr-app`-style
+naming scheme requires: if you pack multiple codes into one component with
+no delimiter (e.g. `ukpr-app` = `uk` + `pr`), a filter for either half -
+`--only-uk` or `--only-pr` - still finds it, wherever in the component it
+sits. Given
 
 ```
 uk-priv-app  uk-corp-app  fi-priv-app  fi-corp-app  nl-priv-app  at-corp-app

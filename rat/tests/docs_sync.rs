@@ -39,7 +39,7 @@ fn normalize(s: &str) -> String {
 /// that --only accepts a comma-separated alias (--only-uk,fi) alongside its
 /// dash form, and README's flag table silently didn't.
 const CROSS_DOC_FACTS: &[&str] = &[
-    "uk or fi as a --separated name component (also accepts --only-uk,fi)",
+    "name component containing uk or fi (also accepts --only-uk,fi)",
     "run at most 4 directories at once (default: number of cpus)",
     "wait as long as it takes, ignoring any timeout",
 ];

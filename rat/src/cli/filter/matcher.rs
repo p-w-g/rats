@@ -18,17 +18,36 @@ impl DirectoryMatcher {
     }
 
     /// `only` and `skip` both apply, combined with AND: a directory must
-    /// have at least one token in `only` (when `only` is non-empty) AND no
-    /// token in `skip` (when `skip` is non-empty). An empty side of the
-    /// filter imposes no constraint on its own.
+    /// have at least one token that contains a value in `only` (when `only`
+    /// is non-empty) AND no token that contains a value in `skip` (when
+    /// `skip` is non-empty). An empty side of the filter imposes no
+    /// constraint on its own.
+    ///
+    /// A filter value matches a token by substring, anywhere in the token,
+    /// not exact equality - e.g. `uk` matches the token `ukpr` (from a
+    /// directory like `ukpr-app`, country + env packed into one token with
+    /// no delimiter between them) and `co` matches that same naming
+    /// scheme's `ukco` even though `co` sits at the *end* of the token.
+    /// This is still component-scoped, not a substring search over the
+    /// whole directory name: `uk` does not match `nl-uk-app`'s `nl` token,
+    /// only its `uk` token.
     pub fn matches(&self, directory_name: &str, filter: &FilterExpression) -> bool {
         let tokens = self.tokenizer.tokenize(directory_name);
 
-        let satisfies_only = filter.only.is_empty() || !filter.only.is_disjoint(&tokens);
-        let satisfies_skip = filter.skip.is_empty() || filter.skip.is_disjoint(&tokens);
+        let satisfies_only = filter.only.is_empty() || any_token_contains(&tokens, &filter.only);
+        let satisfies_skip = filter.skip.is_empty() || !any_token_contains(&tokens, &filter.skip);
 
         satisfies_only && satisfies_skip
     }
+}
+
+fn any_token_contains(
+    tokens: &std::collections::HashSet<String>,
+    values: &std::collections::HashSet<String>,
+) -> bool {
+    tokens
+        .iter()
+        .any(|token| values.iter().any(|value| token.contains(value.as_str())))
 }
 
 impl Default for DirectoryMatcher {
@@ -151,5 +170,72 @@ mod tests {
         let matcher = DirectoryMatcher::default();
         let filter = only(&["repos"]);
         assert!(!matcher.matches("uk-priv-app", &filter));
+    }
+
+    /// Country and environment packed into one token with no delimiter
+    /// between them (`ukpr-app` is `uk` + `pr` run together, not
+    /// `uk-pr-app`) - a real naming scheme where `--only`/`--skip` need to
+    /// filter on either half of the token, not just its start.
+    const PACKED_DIRECTORIES: &[&str] = &["ukpr-app", "ukco-app", "fipr-app", "nlco-app", "tools"];
+
+    fn matching_within(
+        directories: &[&'static str],
+        filter: &FilterExpression,
+    ) -> Vec<&'static str> {
+        let matcher = DirectoryMatcher::default();
+        directories
+            .iter()
+            .copied()
+            .filter(|name| matcher.matches(name, filter))
+            .collect()
+    }
+
+    #[test]
+    fn only_uk_matches_every_uk_app_regardless_of_where_uk_sits_in_the_token() {
+        // "uk" is a prefix of both "ukpr" and "ukco" - matches both, same
+        // as if the folders had been named uk-pr-app/uk-co-app.
+        assert_eq!(
+            matching_within(PACKED_DIRECTORIES, &only(&["uk"])),
+            vec!["ukpr-app", "ukco-app"]
+        );
+    }
+
+    #[test]
+    fn only_co_matches_every_co_app_even_though_co_is_embedded_mid_token() {
+        // "co" is a *suffix* of "ukco"/"nlco", not a prefix - a filter
+        // anchored to the start of the token would miss both of these.
+        assert_eq!(
+            matching_within(PACKED_DIRECTORIES, &only(&["co"])),
+            vec!["ukco-app", "nlco-app"]
+        );
+    }
+
+    #[test]
+    fn only_pr_matches_every_pr_app_even_though_pr_is_embedded_mid_token() {
+        assert_eq!(
+            matching_within(PACKED_DIRECTORIES, &only(&["pr"])),
+            vec!["ukpr-app", "fipr-app"]
+        );
+    }
+
+    #[test]
+    fn only_nl_matches_only_the_one_directory_that_actually_starts_with_nl() {
+        // Guards against a value matching an unrelated token just because
+        // some substring elsewhere happens to line up.
+        assert_eq!(
+            matching_within(PACKED_DIRECTORIES, &only(&["nl"])),
+            vec!["nlco-app"]
+        );
+    }
+
+    #[test]
+    fn skip_app_leaves_only_the_directory_with_no_app_component() {
+        // "app" is its own dash-separated token in every packed directory
+        // (ukpr-app tokenizes to "ukpr", "app"), so --skip-app excludes all
+        // of them and leaves "tools" untouched.
+        assert_eq!(
+            matching_within(PACKED_DIRECTORIES, &skip(&["app"])),
+            vec!["tools"]
+        );
     }
 }
