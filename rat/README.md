@@ -83,7 +83,7 @@ once per immediate subdirectory of the working folder, in parallel.
 | `--recursive` / `--r`  | walk the whole subtree, not just immediate subfolders - see below                                  |
 | `--concurrency-4`      | run at most 4 directories at once (default: number of CPUs)                                        |
 | `--sync`               | run exactly one directory at a time (equivalent to `--concurrency-1`); wins over `--concurrency` if both are given |
-| `--only-uk-fi`         | only run in subfolders that have `uk` or `fi` as a `-`-separated name component                    |
+| `--only-uk-fi`         | only run in subfolders that have `uk` or `fi` as a `-`-separated name component (also accepts `--only-uk,fi`) |
 | `--skip-priv-corp`     | skip subfolders that have `priv` or `corp` as a name component (combines with `--only`, see below)  |
 | `--sustain`            | wait as long as it takes, ignoring any timeout                                                     |
 | `--timeout-30`         | timeout *this run* after 30 seconds, overriding the configured timeout                             |
