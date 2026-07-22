@@ -35,21 +35,16 @@ Available commands:
                                           time (like --concurrency-1, but
                                           says what you mean); wins over
                                           --concurrency if both are given
-                      --only-uk-fi        only run in subfolders that have a
-                                          "-"-separated name component
-                                          containing "uk" or "fi" (also
-                                          accepts --only-uk,fi); matches by
-                                          substring anywhere in the
-                                          component, so "uk" also matches
-                                          "ukpr" or "nlukx", not just a
-                                          component that's exactly "uk"
-                      --skip-priv-corp    skip subfolders that have a name
-                                          component containing "priv" or
-                                          "corp"; combines with --only
-                                          instead of being ignored by it - a
-                                          folder must satisfy --only (if
-                                          given) AND not match --skip (if
-                                          given)
+                      --only-uk-fi        only run in subfolders that have
+                                          "uk" or "fi" as a "-"-separated
+                                          name component (also accepts
+                                          --only-uk,fi)
+                      --skip-priv-corp    skip subfolders that have "priv"
+                                          or "corp" as a name component;
+                                          combines with --only instead of
+                                          being ignored by it - a folder
+                                          must satisfy --only (if given)
+                                          AND not match --skip (if given)
                       --sustain           wait as long as it takes, ignoring
                                           any timeout
                       --timeout-30        timeout this run after 30 seconds,
