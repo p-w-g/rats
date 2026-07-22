@@ -42,6 +42,7 @@ const CROSS_DOC_FACTS: &[&str] = &[
     "uk or fi as a --separated name component (also accepts --only-uk,fi)",
     "run at most 4 directories at once (default: number of cpus)",
     "wait as long as it takes, ignoring any timeout",
+    "matches a value anywhere inside a component",
 ];
 
 #[test]

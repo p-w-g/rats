@@ -1,4 +1,4 @@
-use crate::cli::filter::{DirectoryMatcher, FilterExpression};
+use crate::cli::filter::{DirectoryMatcher, DirectoryTokenizer, FilterExpression, MatchMode};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -36,6 +36,7 @@ pub fn available_directories(
     working_directory: &Path,
     ignored_folders: Option<&[String]>,
     filter: &FilterExpression,
+    mode: MatchMode,
 ) -> io::Result<Vec<PathBuf>> {
     let all_directories: Vec<PathBuf> = std::fs::read_dir(working_directory)?
         .filter_map(|entry| entry.ok())
@@ -47,6 +48,7 @@ pub fn available_directories(
         all_directories,
         ignored_folders,
         filter,
+        mode,
     ))
 }
 
@@ -71,6 +73,7 @@ fn filter_available_directories(
     all_directories: Vec<PathBuf>,
     ignored_folders: Option<&[String]>,
     filter: &FilterExpression,
+    mode: MatchMode,
 ) -> Vec<PathBuf> {
     let mut directories =
         remove_ignored_directories(all_directories, ALWAYS_IGNORED.iter().copied());
@@ -80,7 +83,7 @@ fn filter_available_directories(
     }
 
     if !filter.is_empty() {
-        let matcher = DirectoryMatcher::default();
+        let matcher = DirectoryMatcher::new(DirectoryTokenizer::default(), mode);
         directories.retain(|dir| {
             let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
             matcher.matches(name, filter)
@@ -116,12 +119,13 @@ pub fn available_directories_recursive(
     working_directory: &Path,
     ignored_folders: Option<&[String]>,
     filter: &FilterExpression,
+    mode: MatchMode,
 ) -> io::Result<Vec<PathBuf>> {
     let mut result = Vec::new();
     let mut pending = vec![working_directory.to_path_buf()];
 
     while let Some(dir) = pending.pop() {
-        let children = available_directories(&dir, ignored_folders, filter)?;
+        let children = available_directories(&dir, ignored_folders, filter, mode)?;
         for child in children {
             pending.push(child.clone());
             result.push(child);
@@ -193,7 +197,12 @@ mod tests {
     #[test]
     fn no_filters_passes_through_unchanged() {
         let all = paths(&["/w/api", "/w/web", "/w/docs"]);
-        let result = filter_available_directories(all.clone(), None, &FilterExpression::default());
+        let result = filter_available_directories(
+            all.clone(),
+            None,
+            &FilterExpression::default(),
+            MatchMode::Token,
+        );
         assert_eq!(result, all);
     }
 
@@ -203,7 +212,8 @@ mod tests {
         // hold even on a fresh install with an empty `cfg ignore` list, not
         // just once a user has explicitly configured it.
         let all = paths(&["/w/api", "/w/.git"]);
-        let result = filter_available_directories(all, None, &FilterExpression::default());
+        let result =
+            filter_available_directories(all, None, &FilterExpression::default(), MatchMode::Token);
         assert_eq!(result, paths(&["/w/api"]));
     }
 
@@ -214,6 +224,7 @@ mod tests {
             all,
             Some(&strings(&[".git"])),
             &FilterExpression::default(),
+            MatchMode::Token,
         );
         assert_eq!(result, paths(&["/w/api", "/w/web"]));
     }
@@ -221,7 +232,12 @@ mod tests {
     #[test]
     fn skip_is_applied_when_only_absent() {
         let all = paths(&["/w/api", "/w/web", "/w/docs"]);
-        let result = filter_available_directories(all, None, &filter(None, Some(&["web"])));
+        let result = filter_available_directories(
+            all,
+            None,
+            &filter(None, Some(&["web"])),
+            MatchMode::Token,
+        );
         assert_eq!(result, paths(&["/w/api", "/w/docs"]));
     }
 
@@ -236,6 +252,7 @@ mod tests {
             all,
             None,
             &filter(Some(&["web", "docs"]), Some(&["docs"])),
+            MatchMode::Token,
         );
         assert_eq!(result, paths(&["/w/web"]));
     }
@@ -243,7 +260,12 @@ mod tests {
     #[test]
     fn only_selects_matching_directories() {
         let all = paths(&["/w/api", "/w/web", "/w/docs"]);
-        let result = filter_available_directories(all, None, &filter(Some(&["api", "web"]), None));
+        let result = filter_available_directories(
+            all,
+            None,
+            &filter(Some(&["api", "web"]), None),
+            MatchMode::Token,
+        );
         assert_eq!(result, paths(&["/w/api", "/w/web"]));
     }
 
@@ -254,6 +276,7 @@ mod tests {
             all,
             Some(&strings(&[".git"])),
             &filter(Some(&["api", "web", "docs"]), None),
+            MatchMode::Token,
         );
         assert_eq!(result, paths(&["/w/api", "/w/web", "/w/docs"]));
     }
@@ -263,8 +286,35 @@ mod tests {
         // The parent folder ("web") must not affect matching against its
         // children - only the child directory's own name is tokenized.
         let all = paths(&["/w/web/api", "/w/web/docs"]);
-        let result = filter_available_directories(all, None, &filter(Some(&["web"]), None));
+        let result = filter_available_directories(
+            all,
+            None,
+            &filter(Some(&["web"]), None),
+            MatchMode::Token,
+        );
         assert_eq!(result, Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn token_mode_does_not_match_a_component_that_merely_contains_the_value() {
+        // ukpr-app's token is "ukpr", not "uk" - Token mode (the default)
+        // must not match it, same as this tool has always behaved.
+        let all = paths(&["/w/ukpr-app", "/w/fipr-app"]);
+        let result =
+            filter_available_directories(all, None, &filter(Some(&["uk"]), None), MatchMode::Token);
+        assert_eq!(result, Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn fuzzy_mode_matches_a_component_that_merely_contains_the_value() {
+        // Exercises the actual plumbing `fep` uses (config's match mode ->
+        // filter_available_directories), not just DirectoryMatcher in
+        // isolation - a naming scheme like ukpr-app/ukco-app (country + env
+        // packed into one component) only matches under Fuzzy mode.
+        let all = paths(&["/w/ukpr-app", "/w/ukco-app", "/w/fipr-app"]);
+        let result =
+            filter_available_directories(all, None, &filter(Some(&["uk"]), None), MatchMode::Fuzzy);
+        assert_eq!(result, paths(&["/w/ukpr-app", "/w/ukco-app"]));
     }
 
     #[test]
@@ -274,11 +324,16 @@ mod tests {
         std::fs::create_dir(dir.path().join("web")).unwrap();
         std::fs::write(dir.path().join("not-a-dir.txt"), "x").unwrap();
 
-        let mut result = available_directories(dir.path(), None, &FilterExpression::default())
-            .unwrap()
-            .into_iter()
-            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
+        let mut result = available_directories(
+            dir.path(),
+            None,
+            &FilterExpression::default(),
+            MatchMode::Token,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
         result.sort();
 
         assert_eq!(result, vec!["api".to_string(), "web".to_string()]);
@@ -294,6 +349,7 @@ mod tests {
             dir.path(),
             Some(&strings(&[".git"])),
             &FilterExpression::default(),
+            MatchMode::Token,
         )
         .unwrap();
 
@@ -320,9 +376,13 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("foo/baz")).unwrap();
         std::fs::create_dir_all(dir.path().join("bar/qux")).unwrap();
 
-        let result =
-            available_directories_recursive(dir.path(), None, &FilterExpression::default())
-                .unwrap();
+        let result = available_directories_recursive(
+            dir.path(),
+            None,
+            &FilterExpression::default(),
+            MatchMode::Token,
+        )
+        .unwrap();
 
         assert_eq!(names_of(result), vec!["bar", "baz", "foo", "qux"]);
     }
@@ -340,6 +400,7 @@ mod tests {
             dir.path(),
             Some(&strings(&["node_modules"])),
             &FilterExpression::default(),
+            MatchMode::Token,
         )
         .unwrap();
 
@@ -356,6 +417,7 @@ mod tests {
             dir.path(),
             None,
             &filter(None, Some(&["node_modules"])),
+            MatchMode::Token,
         )
         .unwrap();
 
@@ -378,9 +440,13 @@ mod tests {
             .fold(dir.path().to_path_buf(), |acc, c| acc.join(c));
         std::fs::create_dir_all(&deepest).unwrap();
 
-        let result =
-            available_directories_recursive(dir.path(), None, &FilterExpression::default())
-                .unwrap();
+        let result = available_directories_recursive(
+            dir.path(),
+            None,
+            &FilterExpression::default(),
+            MatchMode::Token,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), components.len());
         assert!(result.contains(&deepest));
@@ -391,9 +457,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("api")).unwrap();
 
-        let result =
-            available_directories_recursive(dir.path(), None, &FilterExpression::default())
-                .unwrap();
+        let result = available_directories_recursive(
+            dir.path(),
+            None,
+            &FilterExpression::default(),
+            MatchMode::Token,
+        )
+        .unwrap();
 
         assert!(!result.contains(&dir.path().to_path_buf()));
     }
@@ -401,9 +471,13 @@ mod tests {
     #[test]
     fn recursive_walk_on_an_empty_directory_returns_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let result =
-            available_directories_recursive(dir.path(), None, &FilterExpression::default())
-                .unwrap();
+        let result = available_directories_recursive(
+            dir.path(),
+            None,
+            &FilterExpression::default(),
+            MatchMode::Token,
+        )
+        .unwrap();
         assert!(result.is_empty());
     }
 }

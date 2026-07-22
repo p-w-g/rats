@@ -1,6 +1,6 @@
 use super::{
-    print_config, print_config_path, set_ignored_directories, set_timeout, set_working_directory,
-    unset_ignored_directories, unset_timeout, unset_working_directory,
+    print_config, print_config_path, set_ignored_directories, set_match_mode, set_timeout,
+    set_working_directory, unset_ignored_directories, unset_timeout, unset_working_directory,
 };
 use crate::cli::ParsedArgs;
 use std::io;
@@ -12,7 +12,7 @@ use std::io;
 /// `rat fep -h`, which has always shown fep's usage.
 const HELP_ALIASES: &[&str] = &["-h", "-help"];
 
-const USAGE: &str = "Usage: rat cfg <path|file|here|away|ignore|heed|to|nto>";
+const USAGE: &str = "Usage: rat cfg <path|file|here|away|ignore|heed|to|nto|match>";
 
 /// Dispatches `cfg <subcommand> [args...]`, mirroring ConfigSwitch.cs's
 /// `Evaluate`.
@@ -51,6 +51,10 @@ pub fn evaluate(instance: &ParsedArgs) {
             None => println!("Forgot to add duration in `rat cfg to`?"),
         },
         "nto" => report(unset_timeout()),
+        "match" => match payload.first() {
+            Some(mode) => report(set_match_mode(mode)),
+            None => println!("Forgot to add a mode (token|fuzzy) in `rat cfg match`?"),
+        },
         _ => println!("Unknown config command: {command} - refer to help (rat help)"),
     }
 }
@@ -83,6 +87,11 @@ mod tests {
     #[test]
     fn to_with_no_duration_does_not_panic() {
         evaluate(&instance(&["to"], &[]));
+    }
+
+    #[test]
+    fn match_with_no_mode_does_not_panic() {
+        evaluate(&instance(&["match"], &[]));
     }
 
     #[test]

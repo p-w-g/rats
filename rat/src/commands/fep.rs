@@ -71,13 +71,14 @@ pub fn run_parallel(instance: &ParsedArgs) -> bool {
         instance.options.get("only").map(Vec::as_slice),
         instance.options.get("skip").map(Vec::as_slice),
     );
+    let match_mode = config.match_mode.unwrap_or_default();
 
     let recursive =
         instance.options.contains_key("recursive") || instance.options.contains_key("r");
     let listing = if recursive {
-        dirs::available_directories_recursive(&working_directory, ignored, &filter)
+        dirs::available_directories_recursive(&working_directory, ignored, &filter, match_mode)
     } else {
-        dirs::available_directories(&working_directory, ignored, &filter)
+        dirs::available_directories(&working_directory, ignored, &filter, match_mode)
     };
 
     let available_dirs = match listing {

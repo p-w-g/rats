@@ -157,6 +157,27 @@ within that flag): `--only-uk,fi` and `--only-uk-fi` both mean "UK or FI".
 > and `--skip` was ignored entirely whenever `--only` was also given. Both
 > of those have changed to the component-aware, combining behavior above.
 
+#### `cfg match`: exact vs. fuzzy component matching
+
+"Whole components" above is the **token** mode, and it's the default: `uk`
+matches the component `uk`, not `ukpr`. If your naming scheme packs
+multiple codes into one component with no delimiter between them - e.g.
+`ukpr-app`/`ukco-app`/`fipr-app`/`nlco-app`, where a country code and an
+env code never get their own dash - token mode can never match either half,
+since neither `ukpr` nor `ukco` is ever exactly `uk`.
+
+**Fuzzy** mode matches a value anywhere inside a component instead:
+`--only-uk` then matches `ukpr-app` and `ukco-app` (both contain `uk`), and
+`--only-co` matches `ukco-app` and `nlco-app` (both contain `co`, even
+though it's a suffix, not a prefix). Fuzzy is opt-in, persisted in config,
+since it's strictly looser than token matching and can match more than
+expected if you're used to token's exactness:
+
+```bash
+rat cfg match fuzzy   # opt in
+rat cfg match token   # back to the default (also clears the config entry)
+```
+
 ### The #1 gotcha: your command's flags vs. rat's flags
 
 rat parses `--flags` out of the command you pass to `fep` *before* your
@@ -241,6 +262,7 @@ Config lives at `~/.ratconfig` (JSON), created on first use of `cfg`.
 | `cfg heed <folders...>` / `--all`    | stop ignoring these folders, or clear the whole ignore list with `--all` |
 | `cfg to <seconds>`                   | set a default timeout for `fep`; `0` disables it                        |
 | `cfg nto`                            | disable the default timeout                                             |
+| `cfg match <token\|fuzzy>`           | set how `--only`/`--skip` match a component - see above                 |
 
 > `.git` is always excluded from `fep` runs, even with an empty `cfg
 > ignore` list - it's not a preference to override, just something nobody

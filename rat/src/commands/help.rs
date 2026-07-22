@@ -44,7 +44,12 @@ Available commands:
                                           combines with --only instead of
                                           being ignored by it - a folder
                                           must satisfy --only (if given)
-                                          AND not match --skip (if given)
+                                          AND not match --skip (if given);
+                                          "as a name component" means the
+                                          whole component, exactly - use
+                                          `cfg match fuzzy` if you want a
+                                          value to match anywhere inside a
+                                          component instead
                       --sustain           wait as long as it takes, ignoring
                                           any timeout
                       --timeout-30        timeout this run after 30 seconds,
@@ -137,6 +142,16 @@ Available commands:
                     `rat cfg to 0`
     cfg nto         disables timeout
 
+    cfg match       sets how --only/--skip values match a directory name's
+                    "-"-separated components; "token" (the default) requires
+                    a value to equal a whole component exactly, "fuzzy"
+                    matches a value anywhere inside a component - useful
+                    when a naming scheme packs multiple codes into one
+                    component with no delimiter (e.g. "ukpr-app", where
+                    "uk" and "pr" never get their own dash)
+                    `rat cfg match token`
+                    `rat cfg match fuzzy`
+
 "#
 }
 
@@ -154,6 +169,7 @@ mod tests {
         assert!(help_text().contains("rat pipe"));
         assert!(help_text().contains("--ready-port"));
         assert!(help_text().contains("--ready-match"));
+        assert!(help_text().contains("rat cfg match"));
         // catches leftover `ath <command>` invocations from the C# original
         // without false-positiving on "path", which legitimately contains "ath"
         assert!(!help_text().contains("`ath "));

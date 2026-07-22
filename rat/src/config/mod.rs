@@ -1,15 +1,18 @@
 mod commands;
 mod ignore;
+mod matching;
 mod print;
 mod timeout;
 mod workdir;
 
 pub use commands::evaluate;
 pub use ignore::{set_ignored_directories, unset_ignored_directories};
+pub use matching::set_match_mode;
 pub use print::{print_config, print_config_path};
 pub use timeout::{set_timeout, unset_timeout};
 pub use workdir::{set_working_directory, unset_working_directory};
 
+use crate::cli::filter::MatchMode;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -22,6 +25,12 @@ pub struct Config {
     pub ignored_folders: Option<Vec<String>>,
     #[serde(rename = "timeOut", skip_serializing_if = "Option::is_none")]
     pub time_out: Option<i32>,
+    /// `None` means the default (`MatchMode::Token`) - kept absent from the
+    /// persisted file in that case rather than written out explicitly, same
+    /// as every other field here, so a fresh/default config stays a minimal
+    /// `{}`.
+    #[serde(rename = "matchMode", skip_serializing_if = "Option::is_none")]
+    pub match_mode: Option<MatchMode>,
 }
 
 /// `~/.ratconfig`. Note this is a fresh path (the C# predecessor `ath` used
@@ -100,6 +109,7 @@ mod tests {
             default_folder: Some("/home/me/projects".into()),
             ignored_folders: Some(vec![".git".into(), ".idea".into()]),
             time_out: Some(30),
+            match_mode: Some(MatchMode::Fuzzy),
         };
 
         save_config_at(&path, &config).unwrap();
@@ -132,12 +142,28 @@ mod tests {
             default_folder: Some("/tmp".into()),
             ignored_folders: None,
             time_out: Some(5),
+            match_mode: Some(MatchMode::Fuzzy),
         };
 
         save_config_at(&path, &config).unwrap();
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(written.contains("\"defaultFolder\""));
         assert!(written.contains("\"timeOut\""));
+        assert!(written.contains("\"matchMode\": \"fuzzy\""));
         assert!(!written.contains("ignoredFolders"));
+    }
+
+    #[test]
+    fn match_mode_is_absent_from_a_default_config() {
+        // None (the default) must stay absent from the persisted file, not
+        // serialize as e.g. "matchMode":"token" - a fresh install's config
+        // should be an empty object, same as every other unset field.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".ratconfig");
+
+        save_config_at(&path, &Config::default()).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(!written.contains("matchMode"));
     }
 }
